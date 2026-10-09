@@ -45,5 +45,12 @@ pipeline {
                 }
             }
         }
+        
+        stage('Verify Salesforce Connection') {
+            steps {
+                bat 'sf org display --target-org sf-dev-jenkins'
+         }
+      }
+
     }
 }
