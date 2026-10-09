@@ -13,7 +13,7 @@ pipeline {
             steps {
                 bat 'sf --version'
                 bat 'sf plugins --help'
-                bat 'sf plugin install --help'
+                bat 'sf plugins install --help'
             }
         }
 
