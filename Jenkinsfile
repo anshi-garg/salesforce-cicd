@@ -18,6 +18,16 @@ pipeline {
             }
         }
 
+        stage('Verify SGD pulugin') {
+            steps {
+                bat 'whoami'
+                bat 'where sf'
+                bat 'sf plugin'
+                bat 'sf sgd source delta --help'
+
+            }
+        }         
+
         stage('Authenticate to Salesforce Dev') {
             steps {
                 withCredentials([
