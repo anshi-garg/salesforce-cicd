@@ -15,5 +15,13 @@ pipeline {
                 bat 'sf --version'
             }
         }
+        
+        stage('Verify Salesforce CLI') {
+             steps {
+             bat 'where sf'
+             bat 'sf --version'
+          }
+       }  
+
     }
 }
