@@ -18,12 +18,11 @@ pipeline {
             }
         }
 
-        stage('Verify SGD pulugin') {
+        stage('Install SGD for jenkins') {
             steps {
-                bat 'whoami'
-                bat 'echo USERPROFILE=%USERPROFILE%'
-                bat 'echo LOCALAPPDATA=%LOCALAPPDATA%'
+                bat 'sf plugins install sfdx-git-delta'
                 bat 'sf plugins'
+                bat 'sf sgd source delta --help'
 
             }
         }         
