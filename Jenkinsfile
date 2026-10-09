@@ -45,12 +45,45 @@ pipeline {
                 }
             }
         }
-        
-        stage('Verify Salesforce Connection') {
+
+        stage('Verify Salesforce Dev Connection') {
             steps {
                 bat 'sf org display --target-org sf-dev-jenkins'
-         }
-      }
+            }
+        }
 
+        stage('Authenticate to Salesforce Test') {
+            steps {
+                withCredentials([
+                    string(
+                        credentialsId: 'sf-test-consumer-key',
+                        variable: 'SF_TEST_CONSUMER_KEY'
+                    ),
+                    string(
+                        credentialsId: 'sf-test-username',
+                        variable: 'SF_TEST_USERNAME'
+                    ),
+                    file(
+                        credentialsId: 'sf-jwt-private-key',
+                        variable: 'SF_JWT_KEY_FILE'
+                    )
+                ]) {
+                    bat '''
+                        sf org login jwt ^
+                          --client-id "%SF_TEST_CONSUMER_KEY%" ^
+                          --username "%SF_TEST_USERNAME%" ^
+                          --jwt-key-file "%SF_JWT_KEY_FILE%" ^
+                          --instance-url https://login.salesforce.com ^
+                          --alias sf-test-jenkins
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Salesforce Test Connection') {
+            steps {
+                bat 'sf org display --target-org sf-test-jenkins'
+            }
+        }
     }
 }
