@@ -20,7 +20,7 @@ pipeline {
 
         stage('Install SGD for jenkins') {
             steps {
-                bat 'sf plugins install sfdx-git-delta'
+                bat 'sf plugins install sfdx-git-delta --force'
                 bat 'sf plugins'
                 bat 'sf sgd source delta --help'
 
