@@ -22,7 +22,7 @@ pipeline {
             steps {
                 bat 'whoami'
                 bat 'where sf'
-                bat 'sf plugin'
+                bat 'sf plugins'
                 bat 'sf sgd source delta --help'
 
             }
