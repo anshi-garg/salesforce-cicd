@@ -9,12 +9,11 @@ pipeline {
             }
         }
 
-        stage('Verify Tools') {
+        stage('Check Salesforce CLI') {
             steps {
-                bat 'git --version'
-                bat 'java -version'
                 bat 'sf --version'
-                bat 'where sf'
+                bat 'sf plugins --help'
+                bat 'sf plugin install --help'
             }
         }
 
