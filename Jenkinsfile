@@ -9,6 +9,19 @@ pipeline {
             }
         }
 
+        
+        stage('Install SGD for jenkins') {
+            steps {
+                bat 'sf plugins trust allowlist add --name sfdx-git-delta'
+                bat 'sf plugins trust allowlist list'
+                bat 'sf plugins install sfdx-git-delta'
+                bat 'sf plugins'
+                bat 'sf sgd source delta --help'
+              
+
+            }
+        } 
+
         stage('Check Salesforce CLI') {
             steps {
                 bat 'sf --version'
@@ -16,15 +29,6 @@ pipeline {
                 bat 'sf plugins install --help'
             }
         }
-
-        stage('Install SGD for jenkins') {
-            steps {
-                bat 'sf plugins install sfdx-git-delta --force'
-                bat 'sf plugins'
-                bat 'sf sgd source delta --help'
-
-            }
-        }         
 
         stage('Authenticate to Salesforce Dev') {
             steps {
