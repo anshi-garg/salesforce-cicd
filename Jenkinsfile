@@ -21,9 +21,9 @@ pipeline {
         stage('Verify SGD pulugin') {
             steps {
                 bat 'whoami'
-                bat 'where sf'
+                bat 'echo USERPROFILE=%USERPROFILE%'
+                bat 'echo LOCALAPPDATA=%LOCALAPPDATA%'
                 bat 'sf plugins'
-                bat 'sf sgd source delta --help'
 
             }
         }         
