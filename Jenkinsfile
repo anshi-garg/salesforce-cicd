@@ -2,31 +2,36 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        skipDefaultCheckout(false)
+    }
+
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        
-        stage('Install SGD for jenkins') {
+        stage('Check Salesforce CLI and SGD') {
             steps {
-                bat 'sf plugins trust allowlist add --name sfdx-git-delta'
-                bat 'sf plugins trust allowlist list'
-                bat 'sf plugins install sfdx-git-delta'
-                bat 'sf plugins'
-                bat 'sf sgd source delta --help'
-              
+                bat '''
+                    sf --version
+                    if errorlevel 1 exit /b 1
 
-            }
-        } 
+                    sf plugins
 
-        stage('Check Salesforce CLI') {
-            steps {
-                bat 'sf --version'
-                bat 'sf plugins --help'
-                bat 'sf plugins install --help'
+                    sf plugins | findstr /I "sfdx-git-delta"
+                    if errorlevel 1 (
+                        echo ERROR: sfdx-git-delta is not installed.
+                        exit /b 1
+                    )
+
+                    sf sgd source delta --help
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
@@ -53,14 +58,19 @@ pipeline {
                           --jwt-key-file "%SF_JWT_KEY_FILE%" ^
                           --instance-url https://login.salesforce.com ^
                           --alias sf-dev-jenkins
+
+                        if errorlevel 1 exit /b 1
                     '''
                 }
             }
         }
 
-        stage('Verify Salesforce Dev Connection') {
+        stage('Verify Salesforce Dev') {
             steps {
-                bat 'sf org display --target-org sf-dev-jenkins'
+                bat '''
+                    sf org display --target-org sf-dev-jenkins
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
@@ -87,15 +97,138 @@ pipeline {
                           --jwt-key-file "%SF_JWT_KEY_FILE%" ^
                           --instance-url https://login.salesforce.com ^
                           --alias sf-test-jenkins
+
+                        if errorlevel 1 exit /b 1
                     '''
                 }
             }
         }
 
-        stage('Verify Salesforce Test Connection') {
+        stage('Verify Salesforce Test') {
             steps {
-                bat 'sf org display --target-org sf-test-jenkins'
+                bat '''
+                    sf org display --target-org sf-test-jenkins
+                    if errorlevel 1 exit /b 1
+                '''
             }
+        }
+
+        stage('Generate Salesforce Delta') {
+            when {
+                changeRequest()
+            }
+
+            steps {
+                bat '''
+                    echo ========================================
+                    echo PR source branch: %CHANGE_BRANCH%
+                    echo PR target branch: %CHANGE_TARGET%
+                    echo ========================================
+
+                    git fetch origin "+refs/heads/%CHANGE_TARGET%:refs/remotes/origin/%CHANGE_TARGET%"
+                    if errorlevel 1 exit /b 1
+
+                    if exist "delta" rmdir /S /Q "delta"
+
+                    mkdir "delta"
+                    if errorlevel 1 exit /b 1
+
+                    echo Generating Salesforce delta...
+
+                    sf sgd source delta ^
+                      --from "origin/%CHANGE_TARGET%" ^
+                      --to "HEAD" ^
+                      --output-dir "delta" ^
+                      --generate-delta
+
+                    if errorlevel 1 exit /b 1
+
+                    echo.
+                    echo ========================================
+                    echo Generated SGD files
+                    echo ========================================
+
+                    dir /S /B delta
+
+                    if not exist "delta\\package\\package.xml" (
+                        echo ERROR: delta\\package\\package.xml was not generated.
+                        echo Check the SGD output above.
+                        exit /b 1
+                    )
+
+                    echo.
+                    echo ========================================
+                    echo Generated delta manifest
+                    echo ========================================
+
+                    type "delta\\package\\package.xml"
+                '''
+            }
+        }
+
+        stage('Validate Salesforce Changes') {
+            when {
+                changeRequest()
+            }
+
+            steps {
+                bat '''
+                    echo ========================================
+                    echo Checking delta manifest
+                    echo ========================================
+
+                    if not exist "delta\\package\\package.xml" (
+                        echo ERROR: Delta manifest not found.
+                        exit /b 1
+                    )
+
+                    type "delta\\package\\package.xml"
+
+                    echo.
+                    echo ========================================
+                    echo Checking project configuration
+                    echo ========================================
+
+                    if not exist "sfdx-project.json" (
+                        echo ERROR: sfdx-project.json not found.
+                        exit /b 1
+                    )
+
+                    type "sfdx-project.json"
+
+                    echo.
+                    echo ========================================
+                    echo Validating Salesforce metadata
+                    echo ========================================
+
+                    sf project deploy validate ^
+                      --manifest "delta\\package\\package.xml" ^
+                      --target-org sf-test-jenkins ^
+                      --test-level RunLocalTests ^
+                      --wait 60
+
+                    set "DEPLOY_EXIT_CODE=%ERRORLEVEL%"
+
+                    echo.
+                    echo Salesforce CLI exit code: %DEPLOY_EXIT_CODE%
+
+                    exit /b %DEPLOY_EXIT_CODE%
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Salesforce CI pipeline completed. Review the console output.'
+        }
+
+        success {
+            echo 'Pipeline succeeded.'
+        }
+
+        failure {
+            echo 'Pipeline failed. Review the first actual error in the console output.'
         }
     }
 }

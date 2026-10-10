@@ -8,7 +8,7 @@ private class HelloWorldTest {
         Test.stopTest();
 
         System.assertEquals(
-            'Hello from Salesforce CI/CD!',
+            'Hello Everyone and bye',
             result
         );
     }
