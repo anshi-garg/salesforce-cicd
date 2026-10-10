@@ -17,18 +17,20 @@ pipeline {
 
         stage('Check Salesforce CLI and SGD') {
             steps {
-                bat 'sf --version'
-
                 bat '''
+                    sf --version
+                    if errorlevel 1 exit /b 1
+
                     sf plugins
 
                     sf plugins | findstr /I "sfdx-git-delta"
                     if errorlevel 1 (
-                        echo ERROR: sfdx-git-delta plugin is not installed.
+                        echo ERROR: sfdx-git-delta is not installed.
                         exit /b 1
                     )
 
                     sf sgd source delta --help
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -63,7 +65,7 @@ pipeline {
             }
         }
 
-        stage('Verify Salesforce Dev Connection') {
+        stage('Verify Salesforce Dev') {
             steps {
                 bat '''
                     sf org display --target-org sf-dev-jenkins
@@ -102,7 +104,7 @@ pipeline {
             }
         }
 
-        stage('Verify Salesforce Test Connection') {
+        stage('Verify Salesforce Test') {
             steps {
                 bat '''
                     sf org display --target-org sf-test-jenkins
@@ -131,6 +133,8 @@ pipeline {
                     mkdir "delta"
                     if errorlevel 1 exit /b 1
 
+                    echo Generating Salesforce delta...
+
                     sf sgd source delta ^
                       --from "origin/%CHANGE_TARGET%" ^
                       --to "HEAD" ^
@@ -148,13 +152,13 @@ pipeline {
 
                     if not exist "delta\\package\\package.xml" (
                         echo ERROR: delta\\package\\package.xml was not generated.
-                        echo Review the SGD output above.
+                        echo Check the SGD output above.
                         exit /b 1
                     )
 
                     echo.
                     echo ========================================
-                    echo Generated package.xml
+                    echo Generated delta manifest
                     echo ========================================
 
                     type "delta\\package\\package.xml"
@@ -169,7 +173,33 @@ pipeline {
 
             steps {
                 bat '''
-                    echo Validating Salesforce metadata against Test org...
+                    echo ========================================
+                    echo Checking delta manifest
+                    echo ========================================
+
+                    if not exist "delta\\package\\package.xml" (
+                        echo ERROR: Delta manifest not found.
+                        exit /b 1
+                    )
+
+                    type "delta\\package\\package.xml"
+
+                    echo.
+                    echo ========================================
+                    echo Checking project configuration
+                    echo ========================================
+
+                    if not exist "sfdx-project.json" (
+                        echo ERROR: sfdx-project.json not found.
+                        exit /b 1
+                    )
+
+                    type "sfdx-project.json"
+
+                    echo.
+                    echo ========================================
+                    echo Validating Salesforce metadata
+                    echo ========================================
 
                     sf project deploy validate ^
                       --manifest "delta\\package\\package.xml" ^
@@ -177,7 +207,12 @@ pipeline {
                       --test-level RunLocalTests ^
                       --wait 60
 
-                    if errorlevel 1 exit /b 1
+                    set "DEPLOY_EXIT_CODE=%ERRORLEVEL%"
+
+                    echo.
+                    echo Salesforce CLI exit code: %DEPLOY_EXIT_CODE%
+
+                    exit /b %DEPLOY_EXIT_CODE%
                 '''
             }
         }
@@ -185,7 +220,7 @@ pipeline {
 
     post {
         always {
-            echo 'Salesforce CI pipeline completed. Review the stage results and console output.'
+            echo 'Salesforce CI pipeline completed. Review the console output.'
         }
 
         success {
@@ -193,7 +228,7 @@ pipeline {
         }
 
         failure {
-            echo 'Pipeline failed. Review the failed stage in the Jenkins console output.'
+            echo 'Pipeline failed. Review the first actual error in the console output.'
         }
     }
 }
