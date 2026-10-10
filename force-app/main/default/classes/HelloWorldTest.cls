@@ -8,7 +8,7 @@ private class HelloWorldTest {
         Test.stopTest();
 
         System.assertEquals(
-            'Hello Everyone!',
+            'Hello Everyone and bye',
             result
         );
     }
