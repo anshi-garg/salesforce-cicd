@@ -2,34 +2,37 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        skipDefaultCheckout(false)
+    }
+
     stages {
 
-        // 1. Checkout the PR code
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        // 2. Check Salesforce CLI and SGD
         stage('Check Salesforce CLI and SGD') {
             steps {
                 bat 'sf --version'
-                bat 'sf plugins'
 
-                // Install SGD only if it is not already installed
                 bat '''
+                    sf plugins
+
                     sf plugins | findstr /I "sfdx-git-delta"
                     if errorlevel 1 (
-                        sf plugins trust allowlist add --name sfdx-git-delta
-                        sf plugins install sfdx-git-delta
+                        echo ERROR: sfdx-git-delta plugin is not installed.
+                        exit /b 1
                     )
+
                     sf sgd source delta --help
                 '''
             }
         }
 
-        // 3. Authenticate to Salesforce Dev
         stage('Authenticate to Salesforce Dev') {
             steps {
                 withCredentials([
@@ -53,6 +56,8 @@ pipeline {
                           --jwt-key-file "%SF_JWT_KEY_FILE%" ^
                           --instance-url https://login.salesforce.com ^
                           --alias sf-dev-jenkins
+
+                        if errorlevel 1 exit /b 1
                     '''
                 }
             }
@@ -60,11 +65,13 @@ pipeline {
 
         stage('Verify Salesforce Dev Connection') {
             steps {
-                bat 'sf org display --target-org sf-dev-jenkins'
+                bat '''
+                    sf org display --target-org sf-dev-jenkins
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
-        // 4. Authenticate to Salesforce Test
         stage('Authenticate to Salesforce Test') {
             steps {
                 withCredentials([
@@ -88,6 +95,8 @@ pipeline {
                           --jwt-key-file "%SF_JWT_KEY_FILE%" ^
                           --instance-url https://login.salesforce.com ^
                           --alias sf-test-jenkins
+
+                        if errorlevel 1 exit /b 1
                     '''
                 }
             }
@@ -95,23 +104,32 @@ pipeline {
 
         stage('Verify Salesforce Test Connection') {
             steps {
-                bat 'sf org display --target-org sf-test-jenkins'
+                bat '''
+                    sf org display --target-org sf-test-jenkins
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
-        // 5. Generate delta package for pull requests
         stage('Generate Salesforce Delta') {
             when {
                 changeRequest()
             }
+
             steps {
                 bat '''
+                    echo ========================================
                     echo PR source branch: %CHANGE_BRANCH%
                     echo PR target branch: %CHANGE_TARGET%
+                    echo ========================================
 
                     git fetch origin "+refs/heads/%CHANGE_TARGET%:refs/remotes/origin/%CHANGE_TARGET%"
+                    if errorlevel 1 exit /b 1
 
                     if exist "delta" rmdir /S /Q "delta"
+
+                    mkdir "delta"
+                    if errorlevel 1 exit /b 1
 
                     sf sgd source delta ^
                       --from "origin/%CHANGE_TARGET%" ^
@@ -121,29 +139,45 @@ pipeline {
 
                     if errorlevel 1 exit /b 1
 
+                    echo.
+                    echo ========================================
+                    echo Generated SGD files
+                    echo ========================================
+
+                    dir /S /B delta
+
                     if not exist "delta\\package\\package.xml" (
-                        echo ERROR: SGD did not generate delta\\package\\package.xml
+                        echo ERROR: delta\\package\\package.xml was not generated.
+                        echo Review the SGD output above.
                         exit /b 1
                     )
 
-                    echo Generated Salesforce package.xml:
+                    echo.
+                    echo ========================================
+                    echo Generated package.xml
+                    echo ========================================
+
                     type "delta\\package\\package.xml"
                 '''
             }
         }
 
-        // 6. Validate PR changes without deploying them
         stage('Validate Salesforce Changes') {
             when {
                 changeRequest()
             }
+
             steps {
                 bat '''
+                    echo Validating Salesforce metadata against Test org...
+
                     sf project deploy validate ^
                       --manifest "delta\\package\\package.xml" ^
                       --target-org sf-test-jenkins ^
                       --test-level RunLocalTests ^
                       --wait 60
+
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -151,13 +185,15 @@ pipeline {
 
     post {
         always {
-            echo 'Salesforce CI pipeline completed. Check the stage results above.'
+            echo 'Salesforce CI pipeline completed. Review the stage results and console output.'
         }
+
         success {
             echo 'Pipeline succeeded.'
         }
+
         failure {
-            echo 'Pipeline failed. Review the Jenkins console output.'
+            echo 'Pipeline failed. Review the failed stage in the Jenkins console output.'
         }
     }
 }
