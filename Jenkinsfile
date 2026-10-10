@@ -3,33 +3,33 @@ pipeline {
     agent any
 
     stages {
+
+        // 1. Checkout the PR code
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        
-        stage('Install SGD for jenkins') {
-            steps {
-                bat 'sf plugins trust allowlist add --name sfdx-git-delta'
-                bat 'sf plugins trust allowlist list'
-                bat 'sf plugins install sfdx-git-delta'
-                bat 'sf plugins'
-                bat 'sf sgd source delta --help'
-              
-
-            }
-        } 
-
-        stage('Check Salesforce CLI') {
+        // 2. Check Salesforce CLI and SGD
+        stage('Check Salesforce CLI and SGD') {
             steps {
                 bat 'sf --version'
-                bat 'sf plugins --help'
-                bat 'sf plugins install --help'
+                bat 'sf plugins'
+
+                // Install SGD only if it is not already installed
+                bat '''
+                    sf plugins | findstr /I "sfdx-git-delta"
+                    if errorlevel 1 (
+                        sf plugins trust allowlist add --name sfdx-git-delta
+                        sf plugins install sfdx-git-delta
+                    )
+                    sf sgd source delta --help
+                '''
             }
         }
 
+        // 3. Authenticate to Salesforce Dev
         stage('Authenticate to Salesforce Dev') {
             steps {
                 withCredentials([
@@ -64,6 +64,7 @@ pipeline {
             }
         }
 
+        // 4. Authenticate to Salesforce Test
         stage('Authenticate to Salesforce Test') {
             steps {
                 withCredentials([
@@ -96,6 +97,67 @@ pipeline {
             steps {
                 bat 'sf org display --target-org sf-test-jenkins'
             }
+        }
+
+        // 5. Generate delta package for pull requests
+        stage('Generate Salesforce Delta') {
+            when {
+                changeRequest()
+            }
+            steps {
+                bat '''
+                    echo PR source branch: %CHANGE_BRANCH%
+                    echo PR target branch: %CHANGE_TARGET%
+
+                    git fetch origin "+refs/heads/%CHANGE_TARGET%:refs/remotes/origin/%CHANGE_TARGET%"
+
+                    if exist "delta" rmdir /S /Q "delta"
+
+                    sf sgd source delta ^
+                      --from "origin/%CHANGE_TARGET%" ^
+                      --to "HEAD" ^
+                      --output-dir "delta" ^
+                      --generate-delta
+
+                    if errorlevel 1 exit /b 1
+
+                    if not exist "delta\\package\\package.xml" (
+                        echo ERROR: SGD did not generate delta\\package\\package.xml
+                        exit /b 1
+                    )
+
+                    echo Generated Salesforce package.xml:
+                    type "delta\\package\\package.xml"
+                '''
+            }
+        }
+
+        // 6. Validate PR changes without deploying them
+        stage('Validate Salesforce Changes') {
+            when {
+                changeRequest()
+            }
+            steps {
+                bat '''
+                    sf project deploy validate ^
+                      --manifest "delta\\package\\package.xml" ^
+                      --target-org sf-test-jenkins ^
+                      --test-level RunLocalTests ^
+                      --wait 60
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Salesforce CI pipeline completed. Check the stage results above.'
+        }
+        success {
+            echo 'Pipeline succeeded.'
+        }
+        failure {
+            echo 'Pipeline failed. Review the Jenkins console output.'
         }
     }
 }
